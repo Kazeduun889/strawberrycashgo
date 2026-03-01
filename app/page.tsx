@@ -29,6 +29,7 @@ declare global {
       WebApp: {
         ready: () => void;
         expand: () => void;
+        openLink: (url: string) => void;
         initDataUnsafe?: {
           user?: {
             first_name?: string;
@@ -37,6 +38,7 @@ declare global {
         };
       };
     };
+    show_10669509?: () => void;
   }
 }
 
@@ -125,6 +127,8 @@ export default function StrawberryApp() {
       const savedXp = localStorage.getItem('strawberry_xp');
       const savedTotalEarned = localStorage.getItem('strawberry_total_earned');
       const savedNickname = localStorage.getItem('strawberry_nickname');
+      const savedIsWatching = localStorage.getItem('strawberry_is_watching');
+      const savedBlurTime = localStorage.getItem('strawberry_blur_time');
 
       if (savedBalance) {
         // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -142,6 +146,19 @@ export default function StrawberryApp() {
       if (savedNickname) {
         setNickname(savedNickname);
       }
+      
+      // Restore watching state
+      if (savedIsWatching === 'true' && savedBlurTime) {
+        const bTime = parseInt(savedBlurTime);
+        setIsWatching(true);
+        setBlurTime(bTime);
+        
+        // Immediately check if enough time passed
+        const timeSpentAway = (Date.now() - bTime) / 1000;
+        if (timeSpentAway >= 10) {
+          setIsVerifying(true);
+        }
+      }
     }
   }, []);
 
@@ -152,39 +169,59 @@ export default function StrawberryApp() {
     localStorage.setItem('strawberry_xp', xp.toString());
     localStorage.setItem('strawberry_total_earned', totalEarnedRub.toString());
     localStorage.setItem('strawberry_nickname', nickname);
-  }, [balanceRub, totalAdsWatched, xp, totalEarnedRub, nickname]);
+    
+    // Persist watching state
+    if (isWatching && blurTime && !isVerifying) {
+      localStorage.setItem('strawberry_is_watching', 'true');
+      localStorage.setItem('strawberry_blur_time', blurTime.toString());
+    } else if (!isWatching) {
+      localStorage.removeItem('strawberry_is_watching');
+      localStorage.removeItem('strawberry_blur_time');
+    }
+  }, [balanceRub, totalAdsWatched, xp, totalEarnedRub, nickname, isWatching, blurTime, isVerifying]);
 
-  // Ad Verification Logic (Focus/Blur tracking)
-  useEffect(() => {
-    const handleFocus = () => {
-      if (isWatching && blurTime) {
-        const timeSpentAway = (Date.now() - blurTime) / 1000;
-        
-        if (timeSpentAway >= 10) {
-          setIsVerifying(true);
-          setVerificationError(false);
-        } else {
-          setVerificationError(true);
-          setIsWatching(false);
-          setBlurTime(null);
-          setProgress(0);
-        }
+  // Ad Verification Logic (Focus/Visibility tracking)
+  const handleReturn = useCallback(() => {
+    if (isWatching && blurTime) {
+      const timeSpentAway = (Date.now() - blurTime) / 1000;
+      
+      // If at least 10 seconds passed since we started/blurred
+      if (timeSpentAway >= 10) {
+        setIsVerifying(true);
+        setVerificationError(false);
+      } else {
+        // If they returned too early, show error but stay in watching mode
+        setVerificationError(true);
+        // We DON'T reset blurTime here anymore, so they can wait and try again
       }
-    };
+    }
+  }, [isWatching, blurTime, setIsVerifying, setVerificationError]);
 
-    const handleBlur = () => {
-      if (isWatching && !blurTime) {
-        setBlurTime(Date.now());
-      }
-    };
-
-    window.addEventListener('focus', handleFocus);
-    window.addEventListener('blur', handleBlur);
-    return () => {
-      window.removeEventListener('focus', handleFocus);
-      window.removeEventListener('blur', handleBlur);
-    };
+  const handleBlur = useCallback(() => {
+    if (isWatching && !blurTime) {
+      setBlurTime(Date.now());
+    }
   }, [isWatching, blurTime]);
+
+  useEffect(() => {
+    const handleStateChange = () => {
+      if (document.visibilityState === 'visible' || document.hasFocus()) {
+        handleReturn();
+      } else {
+        handleBlur();
+      }
+    };
+
+    window.addEventListener('focus', handleStateChange);
+    window.addEventListener('blur', handleStateChange);
+    document.addEventListener('visibilitychange', handleStateChange);
+    
+    return () => {
+      window.removeEventListener('focus', handleStateChange);
+      window.removeEventListener('blur', handleStateChange);
+      document.removeEventListener('visibilitychange', handleStateChange);
+    };
+  }, [handleReturn, handleBlur]);
 
   const completeAd = useCallback(() => {
     const baseReward = Math.random() * (MAX_REWARD - MIN_REWARD) + MIN_REWARD;
@@ -208,7 +245,10 @@ export default function StrawberryApp() {
     
     setIsWatching(false);
     setIsVerifying(false);
+    setBlurTime(null);
     setProgress(0);
+    localStorage.removeItem('strawberry_is_watching');
+    localStorage.removeItem('strawberry_blur_time');
 
     // Celebration
     confetti({
@@ -227,12 +267,34 @@ export default function StrawberryApp() {
     if (isWatching || isVerifying) return;
     
     setVerificationError(false);
-    setBlurTime(null);
     setIsWatching(true);
     setProgress(0);
+    
+    // Set blurTime immediately as a fallback, but we prefer the actual blur event
+    const now = Date.now();
+    setBlurTime(now);
 
-    // Open Monetag link
-    window.open(MONETAG_DIRECT_LINK, '_blank');
+    const openAdLink = () => {
+      const tg = (window as any).Telegram?.WebApp;
+      if (tg && typeof tg.openLink === 'function') {
+        tg.openLink(MONETAG_DIRECT_LINK);
+      } else {
+        window.open(MONETAG_DIRECT_LINK, '_blank');
+      }
+    };
+
+    // Try to use Monetag SDK function if available, otherwise fallback to link
+    const monetagShow = (window as any).show_10669509;
+    if (typeof monetagShow === 'function') {
+      try {
+        monetagShow();
+      } catch (e) {
+        console.error("Monetag SDK error:", e);
+        openAdLink();
+      }
+    } else {
+      openAdLink();
+    }
     
     // Start a visual progress just to show "something is happening"
     const duration = 10000;
@@ -377,29 +439,28 @@ export default function StrawberryApp() {
         </AnimatePresence>
 
         <button
-          onClick={isVerifying ? completeAd : startWatching}
-          disabled={isWatching && !isVerifying}
+          onClick={isVerifying ? completeAd : isWatching ? handleReturn : startWatching}
           className={`w-full group relative overflow-hidden rounded-[24px] p-6 transition-all duration-300 ${
-            isWatching && !isVerifying
-            ? 'bg-gray-100 cursor-not-allowed' 
-            : isVerifying
+            isVerifying
             ? 'bg-green-500 hover:bg-green-600 shadow-lg shadow-green-200'
+            : isWatching
+            ? 'bg-orange-500 hover:bg-orange-600 shadow-lg shadow-orange-200'
             : 'bg-red-500 hover:bg-red-600 active:scale-95 shadow-lg shadow-red-200'
           }`}
         >
           <div className="relative z-10 flex flex-col items-center gap-3">
             {isWatching && !isVerifying ? (
               <>
-                <div className="w-full bg-red-100 h-2 rounded-full overflow-hidden mb-2">
+                <div className="w-full bg-orange-100 h-2 rounded-full overflow-hidden mb-2">
                   <motion.div 
-                    className="h-full bg-red-500"
+                    className="h-full bg-orange-500"
                     initial={{ width: 0 }}
                     animate={{ width: `${progress}%` }}
                   />
                 </div>
-                <p className="text-red-900 font-bold text-sm flex items-center gap-2 text-center">
+                <p className="text-orange-900 font-bold text-sm flex items-center gap-2 text-center">
                   <Clock size={16} className="animate-spin" />
-                  Перейдите на сайт и подождите 10 секунд...
+                  Проверить просмотр (10 сек)
                 </p>
               </>
             ) : isVerifying ? (

@@ -22,6 +22,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="ru" className={`${inter.variable} ${playfair.variable}`} suppressHydrationWarning>
       <head>
         <Script src="https://telegram.org/js/telegram-web-app.js" strategy="beforeInteractive" />
+        <script src="//libtl.com/sdk.js" data-zone="10669509" data-sdk="show_10669509" defer></script>
       </head>
       <body className="bg-[#FFF5F5] text-[#2D1B1B] antialiased" suppressHydrationWarning>
         {children}
