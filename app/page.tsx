@@ -66,6 +66,32 @@ const USDTLogo = () => (
   </svg>
 );
 
+// Safe storage helper
+const safeStorage = {
+  getItem: (key: string) => {
+    try {
+      return localStorage.getItem(key);
+    } catch (e) {
+      console.error('Storage access error:', e);
+      return null;
+    }
+  },
+  setItem: (key: string, value: string) => {
+    try {
+      localStorage.setItem(key, value);
+    } catch (e) {
+      console.error('Storage write error:', e);
+    }
+  },
+  removeItem: (key: string) => {
+    try {
+      localStorage.removeItem(key);
+    } catch (e) {
+      console.error('Storage remove error:', e);
+    }
+  }
+};
+
 export default function StrawberryApp() {
   // State with functional initializers for localStorage
   const [balanceRub, setBalanceRub] = useState<number>(0);
@@ -99,7 +125,7 @@ export default function StrawberryApp() {
 
       // Set nickname from Telegram if not already set
       const user = tg.initDataUnsafe?.user;
-      if (user && !localStorage.getItem('strawberry_nickname')) {
+      if (user && !safeStorage.getItem('strawberry_nickname')) {
         const tgName = user.first_name || user.username || 'Пользователь';
         setNickname(tgName);
         setTempNickname(tgName);
@@ -124,14 +150,14 @@ export default function StrawberryApp() {
   // Load state from localStorage on mount (Client-side only)
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      const savedBalance = localStorage.getItem('strawberry_balance');
-      const savedStats = localStorage.getItem('strawberry_stats');
-      const savedXp = localStorage.getItem('strawberry_xp');
-      const savedTotalEarned = localStorage.getItem('strawberry_total_earned');
-      const savedNickname = localStorage.getItem('strawberry_nickname');
-      const savedIsWatching = localStorage.getItem('strawberry_is_watching');
-      const savedIsVerifying = localStorage.getItem('strawberry_is_verifying');
-      const savedBlurTime = localStorage.getItem('strawberry_blur_time');
+      const savedBalance = safeStorage.getItem('strawberry_balance');
+      const savedStats = safeStorage.getItem('strawberry_stats');
+      const savedXp = safeStorage.getItem('strawberry_xp');
+      const savedTotalEarned = safeStorage.getItem('strawberry_total_earned');
+      const savedNickname = safeStorage.getItem('strawberry_nickname');
+      const savedIsWatching = safeStorage.getItem('strawberry_is_watching');
+      const savedIsVerifying = safeStorage.getItem('strawberry_is_verifying');
+      const savedBlurTime = safeStorage.getItem('strawberry_blur_time');
 
       if (savedBalance) setBalanceRub(parseFloat(savedBalance));
       if (savedStats) setTotalAdsWatched(parseInt(savedStats));
@@ -152,23 +178,23 @@ export default function StrawberryApp() {
 
   // Save state to localStorage
   useEffect(() => {
-    localStorage.setItem('strawberry_balance', balanceRub.toString());
-    localStorage.setItem('strawberry_stats', totalAdsWatched.toString());
-    localStorage.setItem('strawberry_xp', xp.toString());
-    localStorage.setItem('strawberry_total_earned', totalEarnedRub.toString());
-    localStorage.setItem('strawberry_nickname', nickname);
+    safeStorage.setItem('strawberry_balance', balanceRub.toString());
+    safeStorage.setItem('strawberry_stats', totalAdsWatched.toString());
+    safeStorage.setItem('strawberry_xp', xp.toString());
+    safeStorage.setItem('strawberry_total_earned', totalEarnedRub.toString());
+    safeStorage.setItem('strawberry_nickname', nickname);
     
     if (isVerifying) {
-      localStorage.setItem('strawberry_is_verifying', 'true');
-      localStorage.setItem('strawberry_is_watching', 'true');
+      safeStorage.setItem('strawberry_is_verifying', 'true');
+      safeStorage.setItem('strawberry_is_watching', 'true');
     } else if (isWatching) {
-      localStorage.setItem('strawberry_is_watching', 'true');
-      localStorage.setItem('strawberry_is_verifying', 'false');
-      if (blurTime) localStorage.setItem('strawberry_blur_time', blurTime.toString());
+      safeStorage.setItem('strawberry_is_watching', 'true');
+      safeStorage.setItem('strawberry_is_verifying', 'false');
+      if (blurTime) safeStorage.setItem('strawberry_blur_time', blurTime.toString());
     } else {
-      localStorage.removeItem('strawberry_is_watching');
-      localStorage.removeItem('strawberry_is_verifying');
-      localStorage.removeItem('strawberry_blur_time');
+      safeStorage.removeItem('strawberry_is_watching');
+      safeStorage.removeItem('strawberry_is_verifying');
+      safeStorage.removeItem('strawberry_blur_time');
     }
   }, [balanceRub, totalAdsWatched, xp, totalEarnedRub, nickname, isWatching, blurTime, isVerifying]);
 
@@ -185,7 +211,7 @@ export default function StrawberryApp() {
         timerRef.current = setTimeout(updateProgress, 100);
       } else {
         setIsVerifying(true);
-        localStorage.setItem('strawberry_is_verifying', 'true');
+        safeStorage.setItem('strawberry_is_verifying', 'true');
       }
     };
 
@@ -204,7 +230,7 @@ export default function StrawberryApp() {
         setIsVerifying(true);
         setVerificationError(false);
         setProgress(100);
-        localStorage.setItem('strawberry_is_verifying', 'true');
+        safeStorage.setItem('strawberry_is_verifying', 'true');
       } else {
         setVerificationError(true);
       }
@@ -262,9 +288,9 @@ export default function StrawberryApp() {
     setIsVerifying(false);
     setBlurTime(null);
     setProgress(0);
-    localStorage.removeItem('strawberry_is_watching');
-    localStorage.removeItem('strawberry_is_verifying');
-    localStorage.removeItem('strawberry_blur_time');
+    safeStorage.removeItem('strawberry_is_watching');
+    safeStorage.removeItem('strawberry_is_verifying');
+    safeStorage.removeItem('strawberry_blur_time');
 
     // Celebration
     confetti({
@@ -290,9 +316,9 @@ export default function StrawberryApp() {
     const now = Date.now();
     setBlurTime(now);
     setIsWatching(true);
-    localStorage.setItem('strawberry_is_watching', 'true');
-    localStorage.setItem('strawberry_blur_time', now.toString());
-    localStorage.setItem('strawberry_is_verifying', 'false');
+    safeStorage.setItem('strawberry_is_watching', 'true');
+    safeStorage.setItem('strawberry_blur_time', now.toString());
+    safeStorage.setItem('strawberry_is_verifying', 'false');
 
     const openAdLink = () => {
       const tg = (window as any).Telegram?.WebApp;
@@ -513,7 +539,7 @@ export default function StrawberryApp() {
           Минимальный вывод: 100 рублей
         </div>
         <p className="mt-4 text-[10px] text-gray-400 font-medium">
-          © 2024 Strawberry Cash. Все права защищены.
+          © 2024 Strawberry Cash • v.1.0.3
         </p>
       </footer>
 
