@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Play, 
@@ -86,6 +86,8 @@ export default function StrawberryApp() {
   const [selectedMethod, setSelectedMethod] = useState<{ name: string, icon: React.ReactNode } | null>(null);
   const [walletAddress, setWalletAddress] = useState('');
   const [isLucky, setIsLucky] = useState(false);
+  const [isLoadingAd, setIsLoadingAd] = useState(false);
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
 
   // Telegram Integration
   useEffect(() => {
@@ -189,6 +191,11 @@ export default function StrawberryApp() {
       if (timeSpentAway >= 10) {
         setIsVerifying(true);
         setVerificationError(false);
+        setProgress(100);
+        if (timerRef.current) {
+          clearInterval(timerRef.current);
+          timerRef.current = null;
+        }
       } else {
         // If they returned too early, show error but stay in watching mode
         setVerificationError(true);
@@ -220,6 +227,7 @@ export default function StrawberryApp() {
       window.removeEventListener('focus', handleStateChange);
       window.removeEventListener('blur', handleStateChange);
       document.removeEventListener('visibilitychange', handleStateChange);
+      if (timerRef.current) clearInterval(timerRef.current);
     };
   }, [handleReturn, handleBlur]);
 
@@ -264,13 +272,19 @@ export default function StrawberryApp() {
   }, [bonusMultiplier]);
 
   const startWatching = () => {
-    if (isWatching || isVerifying) return;
+    if (isWatching || isVerifying || isLoadingAd) return;
     
+    setIsLoadingAd(true);
     setVerificationError(false);
     setIsWatching(true);
     setProgress(0);
     
-    // Set blurTime immediately as a fallback, but we prefer the actual blur event
+    // Clear any existing timer
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+    }
+
+    // Set blurTime immediately as a fallback
     const now = Date.now();
     setBlurTime(now);
 
@@ -298,19 +312,23 @@ export default function StrawberryApp() {
     
     // Start a visual progress just to show "something is happening"
     const duration = 10000;
-    const interval = 50;
+    const interval = 100; // Slower interval for better performance
     const step = (interval / duration) * 100;
 
     let currentProgress = 0;
-    const timer = setInterval(() => {
+    timerRef.current = setInterval(() => {
       currentProgress += step;
       if (currentProgress >= 100) {
-        clearInterval(timer);
+        if (timerRef.current) clearInterval(timerRef.current);
+        timerRef.current = null;
         setProgress(100);
       } else {
         setProgress(currentProgress);
       }
     }, interval);
+
+    // Prevent spam by keeping loading state for a bit
+    setTimeout(() => setIsLoadingAd(false), 2000);
   };
 
   const strawberries = (balanceRub * RUB_TO_STRAWBERRY).toFixed(2);
@@ -440,8 +458,11 @@ export default function StrawberryApp() {
 
         <button
           onClick={isVerifying ? completeAd : isWatching ? handleReturn : startWatching}
+          disabled={isLoadingAd}
           className={`w-full group relative overflow-hidden rounded-[24px] p-6 transition-all duration-300 ${
-            isVerifying
+            isLoadingAd
+            ? 'bg-gray-400 cursor-wait'
+            : isVerifying
             ? 'bg-green-500 hover:bg-green-600 shadow-lg shadow-green-200'
             : isWatching
             ? 'bg-orange-500 hover:bg-orange-600 shadow-lg shadow-orange-200'
@@ -449,7 +470,12 @@ export default function StrawberryApp() {
           }`}
         >
           <div className="relative z-10 flex flex-col items-center gap-3">
-            {isWatching && !isVerifying ? (
+            {isLoadingAd ? (
+              <div className="flex flex-col items-center gap-2">
+                <div className="w-8 h-8 border-4 border-white/30 border-t-white rounded-full animate-spin" />
+                <p className="text-white font-bold text-sm">Загрузка рекламы...</p>
+              </div>
+            ) : isWatching && !isVerifying ? (
               <>
                 <div className="w-full bg-orange-100 h-2 rounded-full overflow-hidden mb-2">
                   <motion.div 
