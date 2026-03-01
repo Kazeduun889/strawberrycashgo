@@ -88,6 +88,7 @@ export default function StrawberryApp() {
   const [isLucky, setIsLucky] = useState(false);
   const [isLoadingAd, setIsLoadingAd] = useState(false);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const isOpeningAd = useRef(false);
 
   // Telegram Integration
   useEffect(() => {
@@ -100,7 +101,6 @@ export default function StrawberryApp() {
       const user = tg.initDataUnsafe?.user;
       if (user && !localStorage.getItem('strawberry_nickname')) {
         const tgName = user.first_name || user.username || 'Пользователь';
-        // eslint-disable-next-line react-hooks/set-state-in-effect
         setNickname(tgName);
         setTempNickname(tgName);
       }
@@ -130,36 +130,22 @@ export default function StrawberryApp() {
       const savedTotalEarned = localStorage.getItem('strawberry_total_earned');
       const savedNickname = localStorage.getItem('strawberry_nickname');
       const savedIsWatching = localStorage.getItem('strawberry_is_watching');
+      const savedIsVerifying = localStorage.getItem('strawberry_is_verifying');
       const savedBlurTime = localStorage.getItem('strawberry_blur_time');
 
-      if (savedBalance) {
-        // eslint-disable-next-line react-hooks/set-state-in-effect
-        setBalanceRub(parseFloat(savedBalance));
-      }
-      if (savedStats) {
-        setTotalAdsWatched(parseInt(savedStats));
-      }
-      if (savedXp) {
-        setXp(parseInt(savedXp));
-      }
-      if (savedTotalEarned) {
-        setTotalEarnedRub(parseFloat(savedTotalEarned));
-      }
-      if (savedNickname) {
-        setNickname(savedNickname);
-      }
+      if (savedBalance) setBalanceRub(parseFloat(savedBalance));
+      if (savedStats) setTotalAdsWatched(parseInt(savedStats));
+      if (savedXp) setXp(parseInt(savedXp));
+      if (savedTotalEarned) setTotalEarnedRub(parseFloat(savedTotalEarned));
+      if (savedNickname) setNickname(savedNickname);
       
-      // Restore watching state
-      if (savedIsWatching === 'true' && savedBlurTime) {
-        const bTime = parseInt(savedBlurTime);
+      if (savedIsVerifying === 'true') {
+        setIsVerifying(true);
         setIsWatching(true);
-        setBlurTime(bTime);
-        
-        // Immediately check if enough time passed
-        const timeSpentAway = (Date.now() - bTime) / 1000;
-        if (timeSpentAway >= 10) {
-          setIsVerifying(true);
-        }
+        setProgress(100);
+      } else if (savedIsWatching === 'true' && savedBlurTime) {
+        setIsWatching(true);
+        setBlurTime(parseInt(savedBlurTime));
       }
     }
   }, []);
@@ -172,37 +158,58 @@ export default function StrawberryApp() {
     localStorage.setItem('strawberry_total_earned', totalEarnedRub.toString());
     localStorage.setItem('strawberry_nickname', nickname);
     
-    // Persist watching state
-    if (isWatching && blurTime && !isVerifying) {
+    if (isVerifying) {
+      localStorage.setItem('strawberry_is_verifying', 'true');
       localStorage.setItem('strawberry_is_watching', 'true');
-      localStorage.setItem('strawberry_blur_time', blurTime.toString());
-    } else if (!isWatching) {
+    } else if (isWatching) {
+      localStorage.setItem('strawberry_is_watching', 'true');
+      localStorage.setItem('strawberry_is_verifying', 'false');
+      if (blurTime) localStorage.setItem('strawberry_blur_time', blurTime.toString());
+    } else {
       localStorage.removeItem('strawberry_is_watching');
+      localStorage.removeItem('strawberry_is_verifying');
       localStorage.removeItem('strawberry_blur_time');
     }
   }, [balanceRub, totalAdsWatched, xp, totalEarnedRub, nickname, isWatching, blurTime, isVerifying]);
+
+  // Progress Bar Logic
+  useEffect(() => {
+    if (!isWatching || isVerifying || !blurTime) return;
+
+    const updateProgress = () => {
+      const elapsed = (Date.now() - blurTime) / 1000;
+      const newProgress = Math.min((elapsed / 10) * 100, 100);
+      setProgress(newProgress);
+      
+      if (newProgress < 100) {
+        timerRef.current = setTimeout(updateProgress, 100);
+      } else {
+        setIsVerifying(true);
+        localStorage.setItem('strawberry_is_verifying', 'true');
+      }
+    };
+
+    updateProgress();
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, [isWatching, isVerifying, blurTime]);
 
   // Ad Verification Logic (Focus/Visibility tracking)
   const handleReturn = useCallback(() => {
     if (isWatching && blurTime) {
       const timeSpentAway = (Date.now() - blurTime) / 1000;
       
-      // If at least 10 seconds passed since we started/blurred
       if (timeSpentAway >= 10) {
         setIsVerifying(true);
         setVerificationError(false);
         setProgress(100);
-        if (timerRef.current) {
-          clearInterval(timerRef.current);
-          timerRef.current = null;
-        }
+        localStorage.setItem('strawberry_is_verifying', 'true');
       } else {
-        // If they returned too early, show error but stay in watching mode
         setVerificationError(true);
-        // We DON'T reset blurTime here anymore, so they can wait and try again
       }
     }
-  }, [isWatching, blurTime, setIsVerifying, setVerificationError]);
+  }, [isWatching, blurTime]);
 
   const handleBlur = useCallback(() => {
     if (isWatching && !blurTime) {
@@ -227,7 +234,7 @@ export default function StrawberryApp() {
       window.removeEventListener('focus', handleStateChange);
       window.removeEventListener('blur', handleStateChange);
       document.removeEventListener('visibilitychange', handleStateChange);
-      if (timerRef.current) clearInterval(timerRef.current);
+      if (timerRef.current) clearTimeout(timerRef.current);
     };
   }, [handleReturn, handleBlur]);
 
@@ -256,6 +263,7 @@ export default function StrawberryApp() {
     setBlurTime(null);
     setProgress(0);
     localStorage.removeItem('strawberry_is_watching');
+    localStorage.removeItem('strawberry_is_verifying');
     localStorage.removeItem('strawberry_blur_time');
 
     // Celebration
@@ -272,21 +280,19 @@ export default function StrawberryApp() {
   }, [bonusMultiplier]);
 
   const startWatching = () => {
-    if (isWatching || isVerifying || isLoadingAd) return;
+    if (isWatching || isVerifying || isLoadingAd || isOpeningAd.current) return;
     
+    isOpeningAd.current = true;
     setIsLoadingAd(true);
     setVerificationError(false);
-    setIsWatching(true);
     setProgress(0);
     
-    // Clear any existing timer
-    if (timerRef.current) {
-      clearInterval(timerRef.current);
-    }
-
-    // Set blurTime immediately as a fallback
     const now = Date.now();
     setBlurTime(now);
+    setIsWatching(true);
+    localStorage.setItem('strawberry_is_watching', 'true');
+    localStorage.setItem('strawberry_blur_time', now.toString());
+    localStorage.setItem('strawberry_is_verifying', 'false');
 
     const openAdLink = () => {
       const tg = (window as any).Telegram?.WebApp;
@@ -310,25 +316,11 @@ export default function StrawberryApp() {
       openAdLink();
     }
     
-    // Start a visual progress just to show "something is happening"
-    const duration = 10000;
-    const interval = 100; // Slower interval for better performance
-    const step = (interval / duration) * 100;
-
-    let currentProgress = 0;
-    timerRef.current = setInterval(() => {
-      currentProgress += step;
-      if (currentProgress >= 100) {
-        if (timerRef.current) clearInterval(timerRef.current);
-        timerRef.current = null;
-        setProgress(100);
-      } else {
-        setProgress(currentProgress);
-      }
-    }, interval);
-
-    // Prevent spam by keeping loading state for a bit
-    setTimeout(() => setIsLoadingAd(false), 2000);
+    // Prevent spam and reset opening flag
+    setTimeout(() => {
+      setIsLoadingAd(false);
+      isOpeningAd.current = false;
+    }, 3000);
   };
 
   const strawberries = (balanceRub * RUB_TO_STRAWBERRY).toFixed(2);
