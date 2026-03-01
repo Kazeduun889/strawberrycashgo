@@ -7,11 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
-    "clean": "next clean",
-    "static": "next build",
-    "cap-sync": "npx cap sync",
-    "cap-open-android": "npx cap open android",
-    "cap-open-ios": "npx cap open ios"
+    "clean": "next clean"
   },
   "dependencies": {
     "@google/genai": "^1.17.0",
